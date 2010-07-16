@@ -26,13 +26,10 @@
 from pylons import g, config
 
 from r2.models import *
-from r2.lib import amqp, indextank
+from r2.lib import amqp, indextank_client_v1
 from r2.lib.utils import in_chunks, progress
 
-indextank_indexed_types = (Link,)
-
-index = indextank.IndexTank(api_key = g.INDEXTANK_API_KEY,
-                            index_code = g.INDEXTANK_IDX_CODE)
+index = indextank_client_v1.ApiClient(g.INDEXTANK_API_URL).get_index('main')
 
 def maps_from_things(things):
     """We only know how to do links for now"""
@@ -59,7 +56,7 @@ def maps_from_things(things):
         maps.append(d)
     return maps
 
-def to_boosts(ups, downs, num_comments):
+def to_variables(ups, downs, num_comments):
     result = {}
     result[0] = ups
     result[1] = downs
@@ -72,21 +69,15 @@ def inject_maps(maps):
         ups = d.pop("ups")
         downs = d.pop("downs")
         num_comments = d.pop("num_comments")
-        boosts = to_boosts(ups, downs, num_comments)
+        variables = to_variables(ups, downs, num_comments)
 
         if ups not in (0, 1) or downs != 0 or num_comments > 0:
-            ok, result = index.boost(fullname, boosts=boosts)
-            if not ok:
-                raise Exception(result)
-
-        ok, result = index.add(fullname, d, boosts)
-        if not ok:
-            raise Exception(result)
+            index.update_variables(docid=fullname, variables=variables)
+        else:
+            index.add_document(docid=fullname, fields=d, variables=variables)
 
 def delete_thing(thing):
-    ok, result = index.delete(thing._fullname)
-    if not ok:
-        raise Exception(result)
+    index.delete_document(docid=thing._fullname)
 
 def inject(things):
     things = [x for x in things if isinstance(x, indextank_indexed_types)]
